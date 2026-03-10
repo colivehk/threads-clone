@@ -1,26 +1,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import ThreadCard from '@/components/ThreadCard';
-import { supabase } from '../lib/supabase'; 
-import Login from '@/components/Login'; 
-import Avatar from '@/components/Avatar'; 
+import { useParams, useRouter } from 'next/navigation';
+import { supabase } from '../../../lib/supabase'; 
+import ThreadCard from '../../../components/ThreadCard';
+import Avatar from '../../../components/Avatar';
+import Login from '../../../components/Login'; 
 
-export default function Home() {
+export default function ThreadDetail() {
+  const params = useParams();
+  const id = params.id as string;
+  const router = useRouter();
+  
   const [user, setUser] = useState<any>(null); 
   const [isAuthChecking, setIsAuthChecking] = useState(true); 
-  const [threads, setThreads] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
+  const [mainThread, setMainThread] = useState<any>(null);
+  const [replies, setReplies] = useState<any[]>([]);
+
+  // 🔴 引入悬浮弹窗的全部状态核心
   const [replyTarget, setReplyTarget] = useState<any>(null); 
   const [replyList, setReplyList] = useState([{ id: Date.now(), content: '' }]); 
-  
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-
-  // 🔴 终极拼图：控制回复选项弹窗和当前选中的状态
   const [showReplyOptions, setShowReplyOptions] = useState(false);
   const [replyAudience, setReplyAudience] = useState('任何人');
 
+  // 身份验证雷达
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -34,63 +39,21 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchThreads = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('threads')
-      .select('*')
-      .is('parent_id', null) 
-      .order('created_at', { ascending: false });
+  // 拉取详情页情报
+  const fetchData = async () => {
+    if (!id) return;
+    const { data: threadData } = await supabase.from('threads').select('*').eq('id', id).single();
+    if (threadData) setMainThread(threadData);
 
-    if (!error) {
-      setThreads(data || []);
-    }
-    setLoading(false);
+    const { data: repliesData } = await supabase.from('threads').select('*').eq('parent_id', id).order('created_at', { ascending: true });
+    if (repliesData) setReplies(repliesData);
   };
 
   useEffect(() => {
-    fetchThreads();
+    fetchData();
+  }, [id]);
 
-    const channel = supabase
-      .channel('realtime:threads')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'threads' }, 
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            if (payload.new.parent_id === null) {
-              setThreads((prev) => {
-                if (prev.some((t) => t.id === payload.new.id)) return prev;
-                return [payload.new, ...prev];
-              });
-            }
-          }
-
-          if (payload.eventType === 'UPDATE') {
-            setThreads((prev) =>
-              prev.map((thread) =>
-                thread.id === payload.new.id ? payload.new : thread
-              )
-            );
-          }
-        }
-      )
-      .subscribe(); 
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []); 
-
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) alert('撤退失败：' + error.message);
-  };
-
-  const handleDeletePost = (idToDelete: number) => {
-    setThreads((prev) => prev.filter((thread) => thread.id !== idToDelete));
-  };
-
+  // 🔴 统一的弹窗发射引擎
   const handlePostMultiReply = async () => {
     if (!user || !replyTarget) return; 
     
@@ -114,7 +77,7 @@ export default function Home() {
     
     setReplyTarget(null);
     setReplyList([{ id: Date.now(), content: '' }]);
-    fetchThreads(); 
+    fetchData(); // 重新拉取盖楼数据
   };
 
   const handleAttemptClose = () => {
@@ -130,6 +93,7 @@ export default function Home() {
     setReplyTarget(null);
     setReplyList([{ id: Date.now(), content: '' }]);
     setShowDiscardConfirm(false);
+    setShowReplyOptions(false);
   };
 
   if (isAuthChecking) return <div className="min-h-screen bg-[#101010] flex items-center justify-center text-white">识别中...</div>;
@@ -140,49 +104,68 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-white dark:bg-[#101010] flex justify-center relative">
       {!user && <Login />}
-      <div className="w-full max-w-[620px] border-x border-gray-200 dark:border-[#333638] min-h-screen relative">
-          <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#101010]/80 backdrop-blur-md border-b border-gray-200 dark:border-[#333638] p-4 flex justify-between items-center relative">
-          
-          <button onClick={handleLogout} title="退出登录" className="text-[#999999] hover:text-black dark:text-[#777777] dark:hover:text-white p-2 -ml-2 rounded-full transition-colors flex items-center justify-center z-10">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
+      
+      <div className="w-full max-w-[620px] border-x border-gray-200 dark:border-[#333638] min-h-screen relative pb-20">
+        
+        {/* 顶部导航 */}
+        <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#101010]/80 backdrop-blur-md px-4 h-[60px] flex items-center justify-between border-b border-gray-100 dark:border-[#222]">
+          <button onClick={() => router.back()} className="text-[#999999] hover:text-black dark:text-[#777777] dark:hover:text-white p-2 -ml-2 rounded-full transition-colors flex items-center justify-center z-10">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
           </button>
-
-          <h1 className="text-[16px] font-bold text-black dark:text-white absolute left-1/2 transform -translate-x-1/2">
-            推荐
-          </h1>
-
+          <span className="font-bold text-[16px] text-black dark:text-white absolute left-1/2 transform -translate-x-1/2">帖子</span>
+          <div className="w-10"></div>
         </header>
 
-        <div className="pb-20">
-          {loading ? (
-            <div className="p-10 text-center text-gray-500">雷达扫描中...</div>
-          ) : (
-            threads.map((thread) => (
-              <ThreadCard
-                key={thread.id}
-                id={thread.id}
-                authorName={thread.author_name}
-                authorAvatar={thread.author_avatar}
-                content={thread.content}
-                timestamp={new Date(thread.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                likes={thread.likes}
-                replies={thread.replies}
-                currentUserName={currentUserName} 
-                onDelete={handleDeletePost} 
-                imageUrl={thread.image_url} 
-                onReplyClick={(data) => {
-                  setReplyTarget(data);
-                  setReplyList([{ id: Date.now(), content: '' }]); 
-                  setShowReplyOptions(false); // 每次打开弹窗重置菜单状态
-                }}
-              />
-            ))
-          )}
+        {/* 🔴 主贴区 */}
+        {mainThread ? (
+          <ThreadCard 
+            id={mainThread.id}
+            authorName={mainThread.author_name}
+            authorAvatar={mainThread.author_avatar}
+            content={mainThread.content}
+            timestamp={new Date(mainThread.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            likes={mainThread.likes}
+            replies={mainThread.replies}
+            imageUrl={mainThread.image_url}
+            currentUserName={currentUserName}
+            onDelete={() => router.push('/')} // 主贴被删，直接退回首页
+            onReplyClick={(data) => {
+              setReplyTarget(data);
+              setReplyList([{ id: Date.now(), content: '' }]); 
+              setShowReplyOptions(false);
+            }}
+          />
+        ) : (
+          <div className="p-10 text-center text-[#999999]">载入中...</div>
+        )}
+
+        {/* 🔴 盖楼列表区（旧版的内嵌输入框已彻底铲除） */}
+        <div className="mt-2">
+          {replies.map((reply) => (
+            <ThreadCard 
+              key={reply.id}
+              id={reply.id}
+              authorName={reply.author_name}
+              authorAvatar={reply.author_avatar}
+              content={reply.content}
+              timestamp={new Date(reply.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              likes={reply.likes}
+              replies={reply.replies}
+              imageUrl={reply.image_url}
+              currentUserName={currentUserName}
+              onDelete={(deletedId) => setReplies(prev => prev.filter(r => r.id !== deletedId))}
+              onReplyClick={(data) => {
+                setReplyTarget(data);
+                setReplyList([{ id: Date.now(), content: '' }]); 
+                setShowReplyOptions(false);
+              }}
+            />
+          ))}
         </div>
+
       </div>
-      
+
+      {/* 🔴 统一的悬浮多行盖楼弹窗 (100% 同步首页逻辑) */}
       {replyTarget && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={handleAttemptClose}></div>
@@ -284,12 +267,9 @@ export default function Home() {
                   添加到串文
                 </div>
               </div>
-
             </div>
 
             <div className="p-4 px-5 flex justify-between items-center bg-white dark:bg-[#181818] border-t border-gray-100 dark:border-[#222] relative">
-              
-              {/* 🔴 终极彩蛋：高精度的原生“回复选项”及弹出菜单 */}
               <div className="relative flex items-center">
                 <button 
                   onClick={() => setShowReplyOptions(!showReplyOptions)}
@@ -302,13 +282,11 @@ export default function Home() {
                   回复选项
                 </button>
 
-                {/* 浮层菜单 */}
                 {showReplyOptions && (
                   <>
                     <div className="fixed inset-0 z-[110]" onClick={() => setShowReplyOptions(false)}></div>
                     <div className="absolute bottom-[40px] left-0 z-[120] w-[260px] bg-white dark:bg-[#1C1C1C] border border-gray-200 dark:border-[#333] rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)] py-2 animate-in fade-in zoom-in-95 duration-200">
                       <div className="px-5 py-2 text-[12px] font-bold text-[#999999] dark:text-[#777777] select-none">谁能回复和引用</div>
-                      
                       {['任何人', '你的粉丝', '你关注的主页'].map((option) => (
                         <button 
                           key={option}
@@ -321,21 +299,13 @@ export default function Home() {
                           )}
                         </button>
                       ))}
-
                       <div className="h-[1px] bg-gray-200 dark:bg-[#333] my-1 mx-5"></div>
-                      
-                      <button 
-                        onClick={() => setShowReplyOptions(false)}
-                        className="w-full text-left px-5 py-3 text-[15px] font-bold text-black dark:text-[#F3F5F7] hover:bg-gray-100 dark:hover:bg-[#2A2A2A] transition-colors"
-                      >
+                      <button onClick={() => setShowReplyOptions(false)} className="w-full text-left px-5 py-3 text-[15px] font-bold text-black dark:text-[#F3F5F7] hover:bg-gray-100 dark:hover:bg-[#2A2A2A] transition-colors">
                         你提及的主页
                       </button>
-
                       <div className="h-[1px] bg-gray-200 dark:bg-[#333] my-1 mx-5"></div>
-                      
                       <div className="w-full px-5 py-3 flex justify-between items-center cursor-not-allowed opacity-50">
                         <span className="text-[15px] font-bold text-black dark:text-[#F3F5F7]">审核并批准回复</span>
-                        {/* 静态的 Toggle Switch UI */}
                         <div className="w-[36px] h-[22px] bg-gray-300 dark:bg-[#444] rounded-full relative">
                            <div className="absolute left-[2px] top-[2px] w-[18px] h-[18px] bg-white dark:bg-[#888] rounded-full shadow-sm"></div>
                         </div>
@@ -357,26 +327,19 @@ export default function Home() {
         </div>
       )}
 
+      {/* 防误触二次确认拦截 */}
       {showDiscardConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setShowDiscardConfirm(false)}></div>
-          
           <div className="relative bg-white dark:bg-[#1C1C1C] w-[280px] sm:w-[320px] rounded-[16px] shadow-2xl flex flex-col border border-gray-200 dark:border-[#333] animate-in zoom-in-95 duration-200">
             <div className="py-6 px-4 text-center">
               <span className="font-bold text-[16px] text-black dark:text-white">放弃串文？</span>
             </div>
-            
             <div className="flex border-t border-gray-200 dark:border-[#333] h-[50px]">
-              <button 
-                onClick={() => setShowDiscardConfirm(false)}
-                className="flex-1 font-medium text-[15px] text-black dark:text-white border-r border-gray-200 dark:border-[#333] hover:bg-gray-50 dark:hover:bg-[#2A2A2A] transition-colors rounded-bl-[16px]"
-              >
+              <button onClick={() => setShowDiscardConfirm(false)} className="flex-1 font-medium text-[15px] text-black dark:text-white border-r border-gray-200 dark:border-[#333] hover:bg-gray-50 dark:hover:bg-[#2A2A2A] transition-colors rounded-bl-[16px]">
                 取消
               </button>
-              <button 
-                onClick={forceCloseReplyModal}
-                className="flex-1 font-bold text-[15px] text-[#FF3040] hover:bg-gray-50 dark:hover:bg-[#2A2A2A] transition-colors rounded-br-[16px]"
-              >
+              <button onClick={forceCloseReplyModal} className="flex-1 font-bold text-[15px] text-[#FF3040] hover:bg-gray-50 dark:hover:bg-[#2A2A2A] transition-colors rounded-br-[16px]">
                 放弃
               </button>
             </div>

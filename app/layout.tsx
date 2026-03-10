@@ -18,16 +18,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      {/* 强制开启深色模式背景，防止闪瞎眼 */}
-      <body className={`${inter.className} bg-white dark:bg-[#101010] text-black dark:text-white`}>
-        
-        {/* children 就是你具体的每个页面的内容，比如咱们刚才写的首页瀑布流 */}
+    <html lang="zh-CN">
+      <body className={`${inter.className} bg-white dark:bg-[#101010]`}>
+        {/* 这里是你的页面内容 */}
         {children}
-
-        {/* 将底部导航栏挂载在全局！ */}
-        <BottomNav />
         
+        {/* 🔴 2. 将全局导航仪部署在屏幕最下层 */}
+        <BottomNav />
       </body>
     </html>
   );
