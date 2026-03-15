@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Avatar from '@/components/Avatar';
-import Login from '@/components/Login';
 
 export default function Search() {
   const router = useRouter();
@@ -64,7 +63,6 @@ export default function Search() {
 
   return (
     <main className="min-h-screen bg-white dark:bg-[#101010] flex justify-center relative">
-      {!user && <Login />}
       <div className="w-full max-w-[620px] border-x border-gray-200 dark:border-[#333638] min-h-screen relative pb-24">
         
         {/* 顶部搜索输入舱 */}

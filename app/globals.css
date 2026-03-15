@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* 🔴 核心修复：Tailwind v4 稳定版手动暗黑模式指令（注意是 @variant） */
+@variant dark (&:where(.dark, .dark *));
+
+/* 下面是您文件里原有的其他代码，保持不变... */
 :root {
   --background: #ffffff;
   --foreground: #171717;

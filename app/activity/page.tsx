@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Avatar from '@/components/Avatar';
-import Login from '@/components/Login';
 
 export default function Activity() {
   const router = useRouter();
@@ -106,7 +105,6 @@ export default function Activity() {
 
   return (
     <main className="min-h-screen bg-white dark:bg-[#101010] flex justify-center relative">
-      {!user && <Login />}
       <div className="w-full max-w-[620px] border-x border-gray-200 dark:border-[#333638] min-h-screen relative pb-20">
         
         <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#101010]/80 backdrop-blur-md px-4 pt-4 pb-2">

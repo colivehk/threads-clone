@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Avatar from './Avatar';
-import { supabase } from '../lib/supabase'; 
+import { supabase } from '../lib/supabase';
+import Login from './Login'; // 引入新的 Login 组件
 
 interface ThreadCardProps {
   id: number; 
@@ -30,6 +31,8 @@ export default function ThreadCard(props: ThreadCardProps) {
   const [isProcessingLike, setIsProcessingLike] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false); 
   const [zoomedIndex, setZoomedIndex] = useState<number | null>(null); 
+  const [showLoginModal, setShowLoginModal] = useState(false); // 控制登录弹窗的状态
+
   const imagesArray = imageUrl ? imageUrl.split(',') : [];
 
   const scrollRef = useRef<HTMLDivElement>(null); 
@@ -81,7 +84,7 @@ export default function ThreadCard(props: ThreadCardProps) {
 
   const handleLike = async () => {
     if (!currentUserName) {
-      alert('指挥官，请先登录！');
+      setShowLoginModal(true); // 使用弹窗代替 alert
       return;
     }
     if (isProcessingLike) return; 
@@ -121,27 +124,34 @@ export default function ThreadCard(props: ThreadCardProps) {
     else if (onDelete) onDelete(id); 
   };
 
+  // 全量拦截：帖子卡片整体跳转
   const handleCardClick = () => {
     if (!isReplyNode) {
-      router.push(`/thread/${id}`);
+      if (!currentUserName) {
+        setShowLoginModal(true);
+      } else {
+        router.push(`/thread/${id}`);
+      }
     }
   };
 
-  // 🔴 核心魔法：专属头像跳转拦截器
+  // 全量拦截：发帖人头像/名字跳转
   const handleProfileClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // 绝对阻断：不要触发外层卡片的跳转详情页事件！
-    // 带着这个作者的名字，跳入动态主页！
-    router.push(`/profile/${encodeURIComponent(authorName)}`);
+    e.stopPropagation(); 
+    if (!currentUserName) {
+      setShowLoginModal(true);
+    } else {
+      router.push(`/profile/${encodeURIComponent(authorName)}`);
+    }
   };
 
   return (
     <article 
       onClick={handleCardClick} 
-      className={`p-4 sm:p-5 transition-colors cursor-pointer ${isReplyNode ? 'pb-0' : 'border-b border-gray-200 dark:border-[#333638] hover:bg-gray-50/50 dark:hover:bg-[#2A2A2A]/50'}`}
+      className={`p-4 sm:p-5 transition-colors cursor-pointer ${isReplyNode ? 'pb-0' : 'border-b border-gray-200 dark:border-[#333638]'}`}
     >
       <div className="flex gap-3">
         
-        {/* 🔴 给头像区穿上带悬停放大的马甲，并绑上跳转雷达 */}
         <div 
           className="flex flex-col items-center flex-shrink-0 cursor-pointer group" 
           onClick={handleProfileClick}
@@ -150,14 +160,12 @@ export default function ThreadCard(props: ThreadCardProps) {
           <div className="group-hover:opacity-80 transition-opacity">
             <Avatar name={authorName} src={authorAvatar} size="md" />
           </div>
-          {/* 这里的连接线加上 pointer-events-none，防止误触 */}
           {isReplyNode && <div className="w-[2px] flex-1 bg-gray-200 dark:bg-[#333] mt-2 mb-[-20px] rounded-full pointer-events-none"></div>}
         </div>
 
         <div className="flex-1 min-w-0 pb-2">
           <div className="flex items-center justify-between mb-1">
             
-            {/* 🔴 给名字加上下划线反馈，同样绑上跳转雷达 */}
             <span 
               className="font-semibold text-[15px] text-black dark:text-[#F3F5F7] hover:underline cursor-pointer"
               onClick={handleProfileClick}
@@ -187,10 +195,10 @@ export default function ThreadCard(props: ThreadCardProps) {
           {imagesArray.length > 0 && (
             <div
               ref={scrollRef} 
-              onPointerDown={handlePointerDown}      
-              onPointerUp={handlePointerUp}          
-              onPointerCancel={handlePointerUp}      
-              onPointerMove={handlePointerMove}      
+              onPointerDown={handlePointerDown}     
+              onPointerUp={handlePointerUp}         
+              onPointerCancel={handlePointerUp}     
+              onPointerMove={handlePointerMove}     
               className={`mt-3 flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab snap-x snap-mandatory'}`}
             >
             {imagesArray.map((img, idx) => (
@@ -199,16 +207,15 @@ export default function ThreadCard(props: ThreadCardProps) {
                   src={img} 
                   alt={`Image ${idx + 1}`} 
                   draggable={false} 
-                  onDragStart={(e) => e.preventDefault()} /* 🔴新增：彻底拦截拖拽事件 */
+                  onDragStart={(e) => e.preventDefault()} 
                   onClick={(e) => {
                     e.stopPropagation(); 
                     if (draggedRef.current) return;
                     setZoomedIndex(idx);
                   }} 
-                  /* 🔴新增：[-webkit-user-drag:none] 和 select-none 彻底禁止内核拖拽 */
                   className={`flex-shrink-0 object-cover rounded-[12px] border border-gray-100 dark:border-[#333638] transition-transform hover:opacity-90 snap-center [-webkit-user-drag:none] select-none ${imagesArray.length === 1 ? 'w-full max-h-[500px]' : 'w-[260px] h-[260px] sm:w-[300px] sm:h-[300px]'}`} 
                 />
-              ))}。      
+              ))}     
             </div>
           )}
 
@@ -229,7 +236,11 @@ export default function ThreadCard(props: ThreadCardProps) {
               </button>
               
               <button 
-                onClick={(e) => { e.stopPropagation(); onReplyClick?.(props); }} 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (!currentUserName) setShowLoginModal(true); // 拦截：点击回复数图标
+                  else onReplyClick?.(props); 
+                }} 
                 className="flex items-center gap-1.5 hover:text-black dark:hover:text-white transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,15 +282,14 @@ export default function ThreadCard(props: ThreadCardProps) {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
             </button>
           )}
-          {/* 🔴 全屏大图 */}
           <img 
             src={imagesArray[zoomedIndex]} 
             alt="Zoomed" 
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
-            onClick={(e) => e.stopPropagation()} /* 🔴 终极防穿透：点击图片时拦截事件，绝不关闭！ */
+            onClick={(e) => e.stopPropagation()} 
             className="relative z-0 max-w-full max-h-[90vh] object-contain transition-all duration-300 [-webkit-user-drag:none] select-none cursor-default" 
-          />      
+          />     
           {zoomedIndex < imagesArray.length - 1 && (
             <button onClick={(e) => { e.stopPropagation(); setZoomedIndex(zoomedIndex + 1); }} className="absolute right-4 sm:right-10 z-10 text-white/50 hover:text-white transition-colors bg-black/50 hover:bg-black/80 rounded-full p-3">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
@@ -294,6 +304,9 @@ export default function ThreadCard(props: ThreadCardProps) {
           )}
         </div>
       )}
+
+      {/* 底部挂载登录组件 */}
+      {showLoginModal && <Login onClose={() => setShowLoginModal(false)} />}
     </article>
   );
 }

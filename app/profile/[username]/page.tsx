@@ -1,40 +1,28 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import ThreadCard from '@/components/ThreadCard';
 import { supabase } from '@/lib/supabase'; 
-import Login from '@/components/Login'; 
 import Avatar from '@/components/Avatar'; 
 
 export default function Profile() {
   const router = useRouter();
-  const params = useParams();
-  
-  const profileUserName = decodeURIComponent(params.username as string);
-
   const [user, setUser] = useState<any>(null); 
   const [isAuthChecking, setIsAuthChecking] = useState(true); 
 
+  // 帖子与 Tab 状态
   const [activeTab, setActiveTab] = useState<'threads' | 'replies'>('threads');
   const [threads, setThreads] = useState<any[]>([]);
   const [repliesData, setRepliesData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 🟢 关注系统专属雷达核心
-  const [followerCount, setFollowerCount] = useState(0); // 粉丝数
-  const [isFollowing, setIsFollowing] = useState(false); // 我是否关注了 TA
-  const [isFollowProcessing, setIsFollowProcessing] = useState(false); // 防手抖物理保险
-
-  // 高级弹窗系统
+  // 继承高级弹窗系统
   const [replyTarget, setReplyTarget] = useState<any>(null); 
   const [replyList, setReplyList] = useState([{ id: Date.now(), content: '' }]); 
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [showReplyOptions, setShowReplyOptions] = useState(false);
   const [replyAudience, setReplyAudience] = useState('任何人');
-
-  const currentUserName = user ? user.email.split('@')[0] : '';
-  const isMyProfile = currentUserName === profileUserName;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -50,89 +38,38 @@ export default function Profile() {
   }, []);
 
   const fetchUserData = async () => {
+    if (!user) return;
     setLoading(true);
+    const userName = user.email.split('@')[0];
 
-    // 拉取博主帖子
-    const { data: myThreads } = await supabase.from('threads').select('*').eq('author_name', profileUserName).is('parent_id', null).order('created_at', { ascending: false });
+    // 1. 获取我的主贴 (串文)
+    const { data: myThreads } = await supabase
+      .from('threads')
+      .select('*')
+      .eq('author_name', userName)
+      .is('parent_id', null) 
+      .order('created_at', { ascending: false });
+    
     if (myThreads) setThreads(myThreads);
 
-    // 拉取博主回复
-    const { data: myReplies } = await supabase.from('threads').select('*').eq('author_name', profileUserName).not('parent_id', 'is', null).order('created_at', { ascending: false });
+    // 2. 获取我的回复
+    const { data: myReplies } = await supabase
+      .from('threads')
+      .select('*')
+      .eq('author_name', userName)
+      .not('parent_id', 'is', null) 
+      .order('created_at', { ascending: false });
+
     if (myReplies) setRepliesData(myReplies);
     
     setLoading(false);
   };
 
-  // 🟢 专属情报搜集：查阅该主页的粉丝数据
-  const fetchFollowData = async () => {
-    if (!profileUserName) return;
-    
-    // 1. 查询总粉丝数
-    const { count, error: countError } = await supabase
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('following', profileUserName);
-      
-    if (!countError && count !== null) {
-      setFollowerCount(count);
-    }
-
-    // 2. 如果是我看别人，查阅“我”有没有关注“TA”
-    if (currentUserName && !isMyProfile) {
-       const { data } = await supabase
-         .from('follows')
-         .select('id')
-         .eq('follower', currentUserName)
-         .eq('following', profileUserName)
-         .maybeSingle();
-         
-       setIsFollowing(!!data);
-    }
-  };
-
   useEffect(() => {
-    if (profileUserName) {
-      fetchUserData();
-    }
-  }, [profileUserName]);
+    fetchUserData();
+  }, [user]);
 
-  useEffect(() => {
-    fetchFollowData();
-  }, [profileUserName, currentUserName]);
-
-  // 🟢 核心射击控制：关注/取消关注扳机
-  const handleToggleFollow = async () => {
-    if (!currentUserName) {
-      alert('指挥官，请先登录！');
-      return;
-    }
-    if (isFollowProcessing) return; // 锁死扳机，防连发
-    setIsFollowProcessing(true);
-
-    try {
-      if (isFollowing) {
-        // 取消关注：乐观更新（先改UI再请求）
-        setIsFollowing(false);
-        setFollowerCount(prev => Math.max(0, prev - 1));
-        await supabase.from('follows').delete().match({ follower: currentUserName, following: profileUserName });
-      } else {
-        // 关注：乐观更新
-        setIsFollowing(true);
-        setFollowerCount(prev => prev + 1);
-        const { error } = await supabase.from('follows').insert([{ follower: currentUserName, following: profileUserName }]);
-        // 如果被云端拦截（比如断网），撤回本地改动
-        if (error) {
-          setIsFollowing(false);
-          setFollowerCount(prev => prev - 1);
-        }
-      }
-    } catch (err) {
-      console.error('通信干扰', err);
-    } finally {
-      setIsFollowProcessing(false); // 解锁扳机
-    }
-  };
-
+  // 高级弹窗相关逻辑 (与主页完全一致，保证手感不降级)
   const handlePostMultiReply = async () => {
     if (!user || !replyTarget) return; 
     const validReplies = replyList.filter(r => r.content.trim());
@@ -140,7 +77,14 @@ export default function Profile() {
     const userName = user.email.split('@')[0];
     const userAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${userName}`;
 
-    const insertPromises = validReplies.map(reply => supabase.from('threads').insert([{ content: reply.content, author_name: userName, author_avatar: userAvatar, parent_id: replyTarget.id }]));
+    const insertPromises = validReplies.map(reply => 
+      supabase.from('threads').insert([{
+        content: reply.content,
+        author_name: userName, 
+        author_avatar: userAvatar,
+        parent_id: replyTarget.id
+      }])
+    );
     await Promise.all(insertPromises); 
     await supabase.from('threads').update({ replies: (replyTarget.replies || 0) + validReplies.length }).eq('id', replyTarget.id);
     forceCloseReplyModal();
@@ -167,109 +111,96 @@ export default function Profile() {
 
   if (isAuthChecking) return <div className="min-h-screen bg-[#101010] flex items-center justify-center text-white">识别中...</div>;
 
+  const currentUserName = user ? user.email.split('@')[0] : '';
   const currentUserAvatar = user ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUserName}` : '';
-  const profileAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${profileUserName}`;
 
   return (
     <main className="min-h-screen bg-white dark:bg-[#101010] flex justify-center relative">
-      {!user && <Login />}
       <div className="w-full max-w-[620px] border-x border-gray-200 dark:border-[#333638] min-h-screen relative pb-20">
         
-        <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#101010]/80 backdrop-blur-md px-4 h-[60px] flex items-center justify-between border-b border-transparent dark:border-transparent">
-          <button onClick={() => router.back()} className="text-black dark:text-white hover:opacity-70 transition-opacity flex items-center justify-center w-10 h-10 -ml-2 rounded-full">
-             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+        {/* 顶部导航：地球图标与菜单图标复刻 */}
+        <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#101010]/80 backdrop-blur-md px-4 h-[60px] flex items-center justify-between">
+          <button onClick={() => router.push('/')} className="text-black dark:text-white hover:opacity-70 transition-opacity">
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
           </button>
-          <span className="font-bold text-[16px] text-black dark:text-white absolute left-1/2 transform -translate-x-1/2">{profileUserName}</span>
           <div className="flex gap-4">
              <button className="text-black dark:text-white hover:opacity-70"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" /></svg></button>
           </div>
         </header>
 
+        {/* 个人信息名片区 */}
         <div className="px-4 sm:px-6 pt-2 pb-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-[24px] font-bold text-black dark:text-[#F3F5F7] leading-tight">{profileUserName}</h1>
-              <p className="text-[15px] text-black dark:text-[#F3F5F7] mt-1">{profileUserName}</p>
+              <h1 className="text-[24px] font-bold text-black dark:text-[#F3F5F7] leading-tight">{currentUserName}</h1>
+              <p className="text-[15px] text-black dark:text-[#F3F5F7] mt-1">{currentUserName}</p>
             </div>
+            {/* 这里的头像比普通帖子稍微大一点 */}
             <div className="w-[72px] h-[72px] rounded-full overflow-hidden border border-gray-100 dark:border-[#333]">
-               <img src={profileAvatar} alt="Profile" className="w-full h-full object-cover" />
+               <img src={currentUserAvatar} alt="Profile" className="w-full h-full object-cover" />
             </div>
           </div>
-          
-          <p className="mt-4 text-[15px] text-black dark:text-[#F3F5F7]">
-            {isMyProfile ? '这是我的个人主页。目前正在构建 Threads V2.0 终极克隆版。🚀' : `这是 @${profileUserName} 的主页，快来看看 TA 都发了什么！👀`}
-          </p>
-          
-          {/* 🟢 粉丝雷达显示器 */}
+          <p className="mt-4 text-[15px] text-black dark:text-[#F3F5F7]">这是我的个人主页。目前正在构建 Threads V2.0 终极克隆版。🚀</p>
           <div className="mt-4 text-[#999999] dark:text-[#777777] text-[15px] flex items-center gap-2 hover:underline cursor-pointer">
-            {followerCount > 0 && (
-              <div className="flex -space-x-1">
-                <div className="w-4 h-4 rounded-full bg-gray-300 dark:bg-gray-600"></div>
-                {followerCount > 1 && <div className="w-4 h-4 rounded-full bg-gray-400 dark:bg-gray-500"></div>}
-              </div>
-            )}
-            {followerCount} 个关注者
+            <div className="flex -space-x-1">
+               <div className="w-4 h-4 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+               <div className="w-4 h-4 rounded-full bg-gray-400 dark:bg-gray-500"></div>
+            </div>
+            0 个关注者
           </div>
           
           <div className="flex gap-3 mt-5">
-            {isMyProfile ? (
-              <>
-                <button className="flex-1 py-1.5 border border-gray-300 dark:border-[#444] rounded-lg font-bold text-[15px] text-black dark:text-white hover:bg-gray-50 dark:hover:bg-[#1C1C1C] transition-colors">
-                  编辑个人主页
-                </button>
-                <button className="flex-1 py-1.5 border border-gray-300 dark:border-[#444] rounded-lg font-bold text-[15px] text-black dark:text-white hover:bg-gray-50 dark:hover:bg-[#1C1C1C] transition-colors">
-                  分享个人主页
-                </button>
-              </>
-            ) : (
-              <>
-                {/* 🟢 关注/已关注 智能切换按钮 */}
-                <button 
-                  onClick={handleToggleFollow}
-                  disabled={isFollowProcessing}
-                  className={`flex-1 py-1.5 rounded-lg font-bold text-[15px] transition-all ${
-                    isFollowing 
-                      ? 'bg-transparent text-black dark:text-white border border-gray-300 dark:border-[#444] hover:bg-gray-50 dark:hover:bg-[#1C1C1C]' 
-                      : 'bg-black dark:bg-white text-white dark:text-black hover:opacity-80'
-                  }`}
-                >
-                  {isFollowing ? '正在关注' : '关注'}
-                </button>
-                <button className="flex-1 py-1.5 border border-gray-300 dark:border-[#444] rounded-lg font-bold text-[15px] text-black dark:text-white hover:bg-gray-50 dark:hover:bg-[#1C1C1C] transition-colors">
-                  提及
-                </button>
-              </>
-            )}
+            <button className="flex-1 py-1.5 border border-gray-300 dark:border-[#444] rounded-lg font-bold text-[15px] text-black dark:text-white hover:bg-gray-50 dark:hover:bg-[#1C1C1C] transition-colors">
+              编辑个人主页
+            </button>
+            <button className="flex-1 py-1.5 border border-gray-300 dark:border-[#444] rounded-lg font-bold text-[15px] text-black dark:text-white hover:bg-gray-50 dark:hover:bg-[#1C1C1C] transition-colors">
+              分享个人主页
+            </button>
           </div>
         </div>
 
+        {/* 动态 Tab 切换区 */}
         <div className="flex w-full border-b border-gray-200 dark:border-[#333]">
-          <button onClick={() => setActiveTab('threads')} className={`flex-1 pb-3 text-[15px] font-bold transition-colors relative ${activeTab === 'threads' ? 'text-black dark:text-white' : 'text-[#999999] dark:text-[#777777] hover:text-[#666] dark:hover:text-[#aaa]'}`}>
+          <button 
+            onClick={() => setActiveTab('threads')}
+            className={`flex-1 pb-3 text-[15px] font-bold transition-colors relative ${activeTab === 'threads' ? 'text-black dark:text-white' : 'text-[#999999] dark:text-[#777777] hover:text-[#666] dark:hover:text-[#aaa]'}`}
+          >
             串文
             {activeTab === 'threads' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-black dark:bg-white rounded-t-full"></div>}
           </button>
-          <button onClick={() => setActiveTab('replies')} className={`flex-1 pb-3 text-[15px] font-bold transition-colors relative ${activeTab === 'replies' ? 'text-black dark:text-white' : 'text-[#999999] dark:text-[#777777] hover:text-[#666] dark:hover:text-[#aaa]'}`}>
+          <button 
+            onClick={() => setActiveTab('replies')}
+            className={`flex-1 pb-3 text-[15px] font-bold transition-colors relative ${activeTab === 'replies' ? 'text-black dark:text-white' : 'text-[#999999] dark:text-[#777777] hover:text-[#666] dark:hover:text-[#aaa]'}`}
+          >
             回复
             {activeTab === 'replies' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-black dark:bg-white rounded-t-full"></div>}
           </button>
         </div>
 
+        {/* 瀑布流渲染区 */}
         <div className="mt-2">
           {loading ? (
-            <div className="p-10 text-center text-[#999999]">拉取数据中...</div>
+            <div className="p-10 text-center text-[#999999]">扫描数据库中...</div>
           ) : activeTab === 'threads' ? (
             threads.length > 0 ? threads.map(t => (
-              <ThreadCard key={t.id} {...t} currentUserName={currentUserName} onDelete={handleDeletePost} onReplyClick={(data) => { setReplyTarget(data); setReplyList([{ id: Date.now(), content: '' }]); setShowReplyOptions(false); }} />
+              <ThreadCard 
+                key={t.id} {...t} currentUserName={currentUserName} onDelete={handleDeletePost}
+                onReplyClick={(data) => { setReplyTarget(data); setReplyList([{ id: Date.now(), content: '' }]); setShowReplyOptions(false); }}
+              />
             )) : <div className="p-10 text-center text-[#999999]">暂无串文</div>
           ) : (
             repliesData.length > 0 ? repliesData.map(r => (
-              <ThreadCard key={r.id} {...r} currentUserName={currentUserName} onDelete={handleDeletePost} onReplyClick={(data) => { setReplyTarget(data); setReplyList([{ id: Date.now(), content: '' }]); setShowReplyOptions(false); }} />
+              <ThreadCard 
+                key={r.id} {...r} currentUserName={currentUserName} onDelete={handleDeletePost}
+                onReplyClick={(data) => { setReplyTarget(data); setReplyList([{ id: Date.now(), content: '' }]); setShowReplyOptions(false); }}
+              />
             )) : <div className="p-10 text-center text-[#999999]">暂无回复</div>
           )}
         </div>
+
       </div>
 
-      {/* 弹窗系统（保持完美状态） */}
+      {/* 🔴 全局统一下挂件：继承主页的高级回复弹窗 */}
       {replyTarget && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={handleAttemptClose}></div>

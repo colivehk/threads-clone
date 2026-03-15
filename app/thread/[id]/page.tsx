@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../../lib/supabase'; 
 import ThreadCard from '../../../components/ThreadCard';
 import Avatar from '../../../components/Avatar';
-import Login from '../../../components/Login'; 
 
 export default function ThreadDetail() {
   const params = useParams();
@@ -98,12 +97,11 @@ export default function ThreadDetail() {
 
   if (isAuthChecking) return <div className="min-h-screen bg-[#101010] flex items-center justify-center text-white">识别中...</div>;
 
-  const currentUserName = user ? user.email.split('@')[0] : '未知用户';
+  const currentUserName = user ? user.email.split('@')[0] : '';
   const currentUserAvatar = user ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUserName}` : '';
 
   return (
     <main className="min-h-screen bg-white dark:bg-[#101010] flex justify-center relative">
-      {!user && <Login />}
       
       <div className="w-full max-w-[620px] border-x border-gray-200 dark:border-[#333638] min-h-screen relative pb-20">
         
