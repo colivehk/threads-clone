@@ -172,39 +172,40 @@ function ImageLightbox({
   };
 
   return (
-    <div
-      onClick={(e) => {
-        e.stopPropagation();
-        onClose();
-      }}
-      className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/95 backdrop-blur-md px-4 select-none"
-    >
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-        className="absolute top-6 right-6 z-10 text-white/50 hover:text-white transition-colors bg-black/20 rounded-full p-2"
-        type="button"
-      >
+    <div className="fixed inset-0 z-[100000] select-none">
+      <div
+        onClick={onClose}
+        className="absolute inset-0 bg-black/95 backdrop-blur-md"
+        aria-hidden="true"
+      />
+
+      <div className="relative z-0 flex h-full w-full items-center justify-center px-4">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute top-6 right-6 z-20 text-white/50 hover:text-white transition-colors bg-black/20 rounded-full p-2"
+          type="button"
+        >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
 
-      {images.length > 1 && (
-        <div className="absolute top-6 left-6 z-10 rounded-full bg-black/45 px-3 py-1 text-sm text-white/85">
+        {images.length > 1 && (
+          <div className="absolute top-6 left-6 z-20 rounded-full bg-black/45 px-3 py-1 text-sm text-white/85">
           {activeIndex + 1} / {images.length}
         </div>
       )}
 
-      {activeIndex > 0 && (
-        <button
+        {activeIndex > 0 && (
+          <button
           onClick={(e) => {
             e.stopPropagation();
             onPrev();
           }}
-          className="absolute left-4 sm:left-10 z-10 text-white/50 hover:text-white transition-colors bg-black/50 hover:bg-black/80 rounded-full p-3"
+            className="absolute left-4 sm:left-10 z-20 text-white/50 hover:text-white transition-colors bg-black/50 hover:bg-black/80 rounded-full p-3"
           type="button"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -213,16 +214,16 @@ function ImageLightbox({
         </button>
       )}
 
-      <div
-        ref={stageRef}
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
-        className="relative z-0 flex w-full items-center justify-center"
-        style={{ touchAction: canSwipe ? 'pan-y' : 'auto', cursor: canSwipe ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
-      >
+        <div
+          ref={stageRef}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          className="relative z-10 flex max-h-full max-w-full items-center justify-center"
+          style={{ touchAction: canSwipe ? 'pan-y' : 'auto', cursor: canSwipe ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+        >
         <img
           src={images[activeIndex]}
           alt="Zoomed"
@@ -237,13 +238,13 @@ function ImageLightbox({
         />
       </div>
 
-      {activeIndex < images.length - 1 && (
-        <button
+        {activeIndex < images.length - 1 && (
+          <button
           onClick={(e) => {
             e.stopPropagation();
             onNext();
           }}
-          className="absolute right-4 sm:right-10 z-10 text-white/50 hover:text-white transition-colors bg-black/50 hover:bg-black/80 rounded-full p-3"
+            className="absolute right-4 sm:right-10 z-20 text-white/50 hover:text-white transition-colors bg-black/50 hover:bg-black/80 rounded-full p-3"
           type="button"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -252,14 +253,14 @@ function ImageLightbox({
         </button>
       )}
 
-      {images.length > 1 && (
-        <>
-          <div className="absolute bottom-16 left-0 right-0 z-10 flex justify-center pointer-events-none">
+        {images.length > 1 && (
+          <>
+            <div className="absolute bottom-16 left-0 right-0 z-20 flex justify-center pointer-events-none">
             <div className="rounded-full bg-black/35 px-3 py-1 text-xs text-white/70">
               左右拖动可切换图片
             </div>
           </div>
-          <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-2 z-10 pointer-events-none">
+            <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-2 z-20 pointer-events-none">
             {images.map((_, idx) => (
               <div
                 key={idx}
@@ -268,7 +269,8 @@ function ImageLightbox({
             ))}
           </div>
         </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
