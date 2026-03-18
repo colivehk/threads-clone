@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabase';
+import { createThreadPost } from '@/lib/thread-actions';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import CreatePostModal from './CreatePostModal';
 import Login from './Login';
@@ -79,10 +79,25 @@ export default function BottomNav() {
   }, [isMoreMenuOpen]);
 
 
-  const handleAddNewPost = async (newContent: string, imageUrl?: string) => {
+  const handleAddNewPost = async (
+    newContent: string,
+    imageUrl?: string,
+    replySettings?: import('@/lib/thread-types').ThreadReplySettings,
+  ) => {
     if (!isLoggedIn) return;
-    const { error } = await supabase.from('threads').insert([{ author_name: currentUserName, author_avatar: currentUserAvatar, content: newContent, image_url: imageUrl || null, likes: 0, replies: 0 }]);
-    if (!error) { setIsModalOpen(false); if (pathname !== '/') router.push('/'); }
+
+    const { error } = await createThreadPost({
+      authorName: currentUserName,
+      authorAvatar: currentUserAvatar,
+      content: newContent,
+      imageUrl,
+      replySettings,
+    });
+
+    if (!error) {
+      setIsModalOpen(false);
+      if (pathname !== '/') router.push('/');
+    }
   };
 
   const isActive = (path: string) => path === '/' ? pathname === '/' : pathname.startsWith(path);

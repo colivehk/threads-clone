@@ -1,11 +1,12 @@
 import { supabase } from '@/lib/supabase';
-import type { ReplyDraft } from '@/lib/thread-types';
+import type { ReplyDraft, ThreadReplySettings } from '@/lib/thread-types';
 
 export async function createThreadPost(params: {
   authorName: string;
   authorAvatar: string;
   content: string;
   imageUrl?: string;
+  replySettings?: ThreadReplySettings;
 }) {
   return supabase.from('threads').insert([
     {
@@ -15,6 +16,8 @@ export async function createThreadPost(params: {
       image_url: params.imageUrl || null,
       likes: 0,
       replies: 0,
+      reply_audience: params.replySettings?.replyAudience ?? 'everyone',
+      review_replies: params.replySettings?.reviewReplies ?? false,
     },
   ]);
 }

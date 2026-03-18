@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { createThreadReplies } from '@/lib/thread-actions';
+import { checkReplyPermission } from '@/lib/reply-permissions';
 import type { ReplyDraft, ThreadCardData } from '@/lib/thread-types';
 import { createReplyDraft } from '@/lib/thread-utils';
 
@@ -83,6 +84,18 @@ export function useReplyComposer(options: UseReplyComposerOptions) {
 
   const submitReplies = useCallback(async () => {
     if (!replyTarget || !options.currentUserName || isSubmitting) {
+      return false;
+    }
+
+    const permission = await checkReplyPermission({
+      viewerName: options.currentUserName,
+      authorName: replyTarget.authorName,
+      content: replyTarget.content,
+      replyAudience: replyTarget.replyAudience,
+    });
+
+    if (!permission.allowed) {
+      alert(permission.reason || '你当前没有权限回复这条帖子。');
       return false;
     }
 

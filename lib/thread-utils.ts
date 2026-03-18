@@ -32,6 +32,8 @@ export function mapThreadRecordToCardData(record: ThreadRecord): ThreadCardData 
     timestamp: formatThreadTimestamp(record.created_at),
     authorName: record.author_name,
     authorAvatar: record.author_avatar ?? undefined,
+    replyAudience: record.reply_audience ?? 'everyone',
+    reviewReplies: record.review_replies ?? false,
   };
 }
 

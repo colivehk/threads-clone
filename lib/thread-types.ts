@@ -3,6 +3,13 @@ export type AuthUser = {
   email?: string | null;
 };
 
+export type ReplyAudience = 'everyone' | 'followers' | 'following' | 'mentioned';
+
+export type ThreadReplySettings = {
+  replyAudience: ReplyAudience;
+  reviewReplies: boolean;
+};
+
 export type ThreadRecord = {
   id: number;
   content: string;
@@ -13,6 +20,8 @@ export type ThreadRecord = {
   image_url?: string | null;
   author_name: string;
   author_avatar?: string | null;
+  reply_audience?: ReplyAudience | null;
+  review_replies?: boolean | null;
 };
 
 export type ThreadCardData = {
@@ -24,6 +33,8 @@ export type ThreadCardData = {
   timestamp: string;
   authorName: string;
   authorAvatar?: string;
+  replyAudience?: ReplyAudience;
+  reviewReplies?: boolean;
 };
 
 export type ReplyDraft = {

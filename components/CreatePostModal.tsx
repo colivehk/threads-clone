@@ -4,14 +4,21 @@ import { useEffect, useRef, useState } from 'react';
 import Avatar from './Avatar';
 import { supabase } from '../lib/supabase';
 import { compressImageFile } from '../lib/image-compression';
+import type { ReplyAudience, ThreadReplySettings } from '@/lib/thread-types';
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (content: string, imageUrl?: string) => void;
+  onSubmit: (content: string, imageUrl?: string, replySettings?: ThreadReplySettings) => void | Promise<void>;
   userName: string;
   userAvatar: string;
 }
+
+const replyAudienceOptions: Array<{ value: ReplyAudience; label: string }> = [
+  { value: 'everyone', label: '任何人' },
+  { value: 'followers', label: '你的粉丝' },
+  { value: 'following', label: '你关注的主页' },
+];
 
 function getUploadExtension(file: File): string {
   if (file.type === 'image/webp') return 'webp';
@@ -26,6 +33,8 @@ export default function CreatePostModal({ isOpen, onClose, onSubmit, userName, u
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showReplyOptions, setShowReplyOptions] = useState(false);
+  const [replyAudience, setReplyAudience] = useState<ReplyAudience>('everyone');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,6 +42,12 @@ export default function CreatePostModal({ isOpen, onClose, onSubmit, userName, u
       imagePreviews.forEach((preview) => URL.revokeObjectURL(preview));
     };
   }, [imagePreviews]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowReplyOptions(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -63,6 +78,8 @@ export default function CreatePostModal({ isOpen, onClose, onSubmit, userName, u
     setImageFiles([]);
     setImagePreviews([]);
     setIsUploading(false);
+    setShowReplyOptions(false);
+    setReplyAudience('everyone');
   };
 
   const handleSubmit = async () => {
@@ -107,7 +124,10 @@ export default function CreatePostModal({ isOpen, onClose, onSubmit, userName, u
     }
 
     const joinedUrls = finalImageUrls.length > 0 ? finalImageUrls.join(',') : undefined;
-    onSubmit(content, joinedUrls);
+    await onSubmit(content, joinedUrls, {
+      replyAudience,
+      reviewReplies: false,
+    });
     resetComposer();
     onClose();
   };
@@ -159,9 +179,65 @@ export default function CreatePostModal({ isOpen, onClose, onSubmit, userName, u
           图片会在上传前自动压缩到更适合网页显示的大小，GIF/SVG 将保持原样。
         </div>
 
-        <div className="p-4 sm:p-5 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <span className="text-[14px] text-[#999999] dark:text-[#777777]">任何人都可以回复</span>
+        <div className="p-4 sm:p-5 flex justify-between items-center relative">
+          <div className="relative flex items-center gap-2">
+            <button
+              onClick={() => setShowReplyOptions(!showReplyOptions)}
+              className="flex items-center text-[14px] font-medium text-[#999999] dark:text-[#777777] hover:text-black dark:hover:text-white transition-colors"
+              type="button"
+            >
+              <svg className="w-[18px] h-[18px] mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
+                <path d="M9 16V8m-3 3l3-3 3 3M15 8v8m-3-3l3 3 3-3"></path>
+              </svg>
+              回复选项
+            </button>
+
+            {showReplyOptions && (
+              <>
+                <div className="fixed inset-0 z-[60]" onClick={() => setShowReplyOptions(false)}></div>
+                <div className="absolute bottom-[44px] left-0 z-[70] w-[260px] bg-white dark:bg-[#1C1C1C] border border-gray-200 dark:border-[#333] rounded-[16px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)] py-2 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-5 py-2 text-[12px] font-bold text-[#999999] dark:text-[#777777] select-none">谁能回复和引用</div>
+                  {replyAudienceOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => {
+                        setReplyAudience(option.value);
+                        setShowReplyOptions(false);
+                      }}
+                      className="w-full text-left px-5 py-3 text-[15px] font-bold text-black dark:text-[#F3F5F7] hover:bg-gray-100 dark:hover:bg-[#2A2A2A] flex justify-between items-center transition-colors"
+                      type="button"
+                    >
+                      {option.label}
+                      {replyAudience === option.value && (
+                        <svg className="w-5 h-5 text-black dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                      )}
+                    </button>
+                  ))}
+                  <div className="h-[1px] bg-gray-200 dark:bg-[#333] my-1 mx-5"></div>
+                  <button
+                    onClick={() => {
+                      setReplyAudience('mentioned');
+                      setShowReplyOptions(false);
+                    }}
+                    className="w-full text-left px-5 py-3 text-[15px] font-bold text-black dark:text-[#F3F5F7] hover:bg-gray-100 dark:hover:bg-[#2A2A2A] flex justify-between items-center transition-colors"
+                    type="button"
+                  >
+                    你提及的主页
+                    {replyAudience === 'mentioned' && (
+                      <svg className="w-5 h-5 text-black dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                    )}
+                  </button>
+                  <div className="h-[1px] bg-gray-200 dark:bg-[#333] my-1 mx-5"></div>
+                  <div className="w-full px-5 py-3 flex justify-between items-center cursor-not-allowed opacity-50">
+                    <span className="text-[15px] font-bold text-black dark:text-[#F3F5F7]">审核并批准回复</span>
+                    <div className="w-[36px] h-[22px] bg-gray-300 dark:bg-[#444] rounded-full relative">
+                      <div className="absolute left-[2px] top-[2px] w-[18px] h-[18px] bg-white dark:bg-[#888] rounded-full shadow-sm"></div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
             <input type="file" accept="image/*" multiple ref={fileInputRef} onChange={handleImageSelect} className="hidden" />
             <button

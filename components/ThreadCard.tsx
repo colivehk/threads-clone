@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Avatar from '@/components/Avatar';
 import Login from '@/components/Login';
 import { supabase } from '@/lib/supabase';
-import type { ThreadCardData } from '@/lib/thread-types';
+import type { ReplyAudience, ThreadCardData } from '@/lib/thread-types';
 import { parseImageUrls } from '@/lib/thread-utils';
+import { checkReplyPermission } from '@/lib/reply-permissions';
 
 type ThreadCardProps = ThreadCardData & {
   currentUserName?: string;
@@ -15,6 +16,8 @@ type ThreadCardProps = ThreadCardData & {
   onReplyClick?: (data: ThreadCardData) => void;
   onRequireLogin?: () => void;
   isReplyNode?: boolean;
+  replyAudience?: ReplyAudience;
+  reviewReplies?: boolean;
 };
 
 function DeleteConfirmModal({
@@ -68,6 +71,106 @@ function ImageLightbox({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  const canSwipe = images.length > 1;
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartXRef = useRef(0);
+  const pointerIdRef = useRef<number | null>(null);
+  const draggedRef = useRef(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key === 'ArrowLeft' && activeIndex > 0) onPrev();
+      if (event.key === 'ArrowRight' && activeIndex < images.length - 1) onNext();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeIndex, images.length, onClose, onNext, onPrev]);
+
+  useEffect(() => {
+    setDragOffsetX(0);
+    setIsDragging(false);
+    draggedRef.current = false;
+    pointerIdRef.current = null;
+  }, [activeIndex]);
+
+  const releasePointer = (pointerId?: number) => {
+    if (pointerId == null || !stageRef.current) return;
+    try {
+      stageRef.current.releasePointerCapture(pointerId);
+    } catch {}
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!canSwipe) return;
+    dragStartXRef.current = e.clientX;
+    pointerIdRef.current = e.pointerId;
+    draggedRef.current = false;
+    setIsDragging(true);
+    stageRef.current = e.currentTarget;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!canSwipe || pointerIdRef.current !== e.pointerId) return;
+
+    const rawOffset = e.clientX - dragStartXRef.current;
+    const atEdge = (activeIndex === 0 && rawOffset > 0) || (activeIndex === images.length - 1 && rawOffset < 0);
+    const nextOffset = atEdge ? rawOffset * 0.35 : rawOffset;
+
+    if (Math.abs(rawOffset) > 6) {
+      draggedRef.current = true;
+    }
+
+    setDragOffsetX(nextOffset);
+    e.stopPropagation();
+  };
+
+  const finishSwipe = (pointerId?: number) => {
+    const threshold = 72;
+    const movedEnough = Math.abs(dragOffsetX) > threshold;
+    const canGoPrev = dragOffsetX > 0 && activeIndex > 0;
+    const canGoNext = dragOffsetX < 0 && activeIndex < images.length - 1;
+
+    releasePointer(pointerId);
+    pointerIdRef.current = null;
+    setIsDragging(false);
+
+    if (movedEnough && canGoPrev) {
+      setDragOffsetX(0);
+      onPrev();
+      return;
+    }
+
+    if (movedEnough && canGoNext) {
+      setDragOffsetX(0);
+      onNext();
+      return;
+    }
+
+    setDragOffsetX(0);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!canSwipe || pointerIdRef.current !== e.pointerId) return;
+    finishSwipe(e.pointerId);
+    e.stopPropagation();
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!canSwipe || pointerIdRef.current !== e.pointerId) return;
+    releasePointer(e.pointerId);
+    pointerIdRef.current = null;
+    setIsDragging(false);
+    setDragOffsetX(0);
+    draggedRef.current = false;
+    e.stopPropagation();
+  };
+
   return (
     <div
       onClick={(e) => {
@@ -89,6 +192,12 @@ function ImageLightbox({
         </svg>
       </button>
 
+      {images.length > 1 && (
+        <div className="absolute top-6 left-6 z-10 rounded-full bg-black/45 px-3 py-1 text-sm text-white/85">
+          {activeIndex + 1} / {images.length}
+        </div>
+      )}
+
       {activeIndex > 0 && (
         <button
           onClick={(e) => {
@@ -104,14 +213,29 @@ function ImageLightbox({
         </button>
       )}
 
-      <img
-        src={images[activeIndex]}
-        alt="Zoomed"
-        draggable={false}
-        onDragStart={(e) => e.preventDefault()}
+      <div
+        ref={stageRef}
         onClick={(e) => e.stopPropagation()}
-        className="relative z-0 max-w-full max-h-[90vh] object-contain transition-all duration-300 [-webkit-user-drag:none] select-none cursor-default"
-      />
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        className="relative z-0 flex w-full items-center justify-center"
+        style={{ touchAction: canSwipe ? 'pan-y' : 'auto', cursor: canSwipe ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+      >
+        <img
+          src={images[activeIndex]}
+          alt="Zoomed"
+          draggable={false}
+          onDragStart={(e) => e.preventDefault()}
+          className="max-w-full max-h-[90vh] object-contain select-none [-webkit-user-drag:none]"
+          style={{
+            transform: `translate3d(${dragOffsetX}px, 0, 0) scale(${isDragging ? 0.985 : 1})`,
+            transition: isDragging ? 'none' : 'transform 220ms ease',
+            cursor: canSwipe ? (isDragging ? 'grabbing' : 'grab') : 'default',
+          }}
+        />
+      </div>
 
       {activeIndex < images.length - 1 && (
         <button
@@ -129,15 +253,40 @@ function ImageLightbox({
       )}
 
       {images.length > 1 && (
-        <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-2 z-10 pointer-events-none">
-          {images.map((_, idx) => (
-            <div
-              key={idx}
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${idx === activeIndex ? 'bg-white scale-125' : 'bg-white/30'}`}
-            />
-          ))}
-        </div>
+        <>
+          <div className="absolute bottom-16 left-0 right-0 z-10 flex justify-center pointer-events-none">
+            <div className="rounded-full bg-black/35 px-3 py-1 text-xs text-white/70">
+              左右拖动可切换图片
+            </div>
+          </div>
+          <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-2 z-10 pointer-events-none">
+            {images.map((_, idx) => (
+              <div
+                key={idx}
+                className={`w-2 h-2 rounded-full transition-all duration-300 ${idx === activeIndex ? 'bg-white scale-125' : 'bg-white/30'}`}
+              />
+            ))}
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+function SingleImagePreview({ image, onOpen }: { image: string; onOpen: () => void }) {
+  return (
+    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+      <img
+        src={image}
+        alt="Thread image"
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        className="w-full max-h-[500px] object-cover rounded-[12px] border border-gray-100 dark:border-[#333638] transition-transform hover:opacity-90 [-webkit-user-drag:none] select-none cursor-pointer"
+      />
     </div>
   );
 }
@@ -152,57 +301,99 @@ function ThreadImageGallery({
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
-  const [dragged, setDragged] = useState(false);
+  const draggedRef = useRef(false);
+  const dragDistanceRef = useRef(0);
+  const pressedIndexRef = useRef<number | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
-    setIsDragging(true);
-    setDragged(false);
-    setStartX(e.pageX - container.offsetLeft);
+    setIsDragging(false);
+    draggedRef.current = false;
+    dragDistanceRef.current = 0;
+    setStartX(e.clientX);
     setScrollLeft(container.scrollLeft);
     container.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  };
+
+  const finishDrag = (container: HTMLDivElement, pointerId: number) => {
+    try {
+      container.releasePointerCapture(pointerId);
+    } catch {}
+
+    window.setTimeout(() => {
+      setIsDragging(false);
+      if (!draggedRef.current && pressedIndexRef.current !== null) {
+        onOpen(pressedIndexRef.current);
+      }
+      pressedIndexRef.current = null;
+      draggedRef.current = false;
+      dragDistanceRef.current = 0;
+    }, 0);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    finishDrag(e.currentTarget, e.pointerId);
+    e.stopPropagation();
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    if (!container.hasPointerCapture(e.pointerId)) return;
+
+    const walk = e.clientX - startX;
+    dragDistanceRef.current = Math.max(dragDistanceRef.current, Math.abs(walk));
+    if (dragDistanceRef.current > 6) {
+      draggedRef.current = true;
+      setIsDragging(true);
+      e.preventDefault();
+      container.scrollLeft = scrollLeft - walk;
+    }
+    e.stopPropagation();
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    pressedIndexRef.current = null;
+    draggedRef.current = false;
+    dragDistanceRef.current = 0;
     setIsDragging(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDragging) return;
-
-    e.preventDefault();
-    const container = e.currentTarget;
-    const x = e.pageX - container.offsetLeft;
-    const walk = (x - startX) * 2;
-    if (Math.abs(walk) > 5) setDragged(true);
-    container.scrollLeft = scrollLeft - walk;
+    e.stopPropagation();
   };
 
   return (
     <div
+      onClick={(e) => e.stopPropagation()}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onPointerMove={handlePointerMove}
       className={`mt-3 flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab snap-x snap-mandatory'}`}
+      style={{ touchAction: 'pan-y', cursor: isDragging ? 'grabbing' : 'grab' }}
     >
       {images.map((img, idx) => (
-        <img
+        <button
           key={`${img}-${idx}`}
-          src={img}
-          alt={`Image ${idx + 1}`}
-          draggable={false}
-          onDragStart={(e) => e.preventDefault()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (dragged) return;
-            onOpen(idx);
+          type="button"
+          onPointerDown={() => {
+            pressedIndexRef.current = idx;
           }}
-          className={`flex-shrink-0 object-cover rounded-[12px] border border-gray-100 dark:border-[#333638] transition-transform hover:opacity-90 snap-center [-webkit-user-drag:none] select-none ${images.length === 1 ? 'w-full max-h-[500px]' : 'w-[260px] h-[260px] sm:w-[300px] sm:h-[300px]'}`}
-        />
+          onClick={(e) => e.preventDefault()}
+          className="flex-shrink-0 snap-center rounded-[12px] border border-gray-100 dark:border-[#333638] overflow-hidden transition-transform hover:opacity-90 bg-transparent p-0"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          aria-label={`查看第 ${idx + 1} 张图片`}
+        >
+          <img
+            src={img}
+            alt={`Image ${idx + 1}`}
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
+            className="block object-cover [-webkit-user-drag:none] select-none w-[260px] h-[260px] sm:w-[300px] sm:h-[300px]"
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          />
+        </button>
       ))}
     </div>
   );
@@ -223,6 +414,8 @@ export default function ThreadCard({
   onReplyClick,
   onRequireLogin,
   isReplyNode,
+  replyAudience,
+  reviewReplies,
 }: ThreadCardProps) {
   const router = useRouter();
   const viewerName = currentUserName?.trim() ?? '';
@@ -245,6 +438,8 @@ export default function ThreadCard({
     likes,
     replies,
     imageUrl,
+    replyAudience,
+    reviewReplies,
   };
 
   const requireLogin = () => {
@@ -356,7 +551,7 @@ export default function ThreadCard({
   };
 
   const handleCardClick = () => {
-    if (isReplyNode) return;
+    if (isReplyNode || zoomedIndex !== null) return;
 
     if (!canInteract) {
       requireLogin();
@@ -377,11 +572,23 @@ export default function ThreadCard({
     router.push(`/profile/${encodeURIComponent(authorName)}`);
   };
 
-  const handleReplyAction = (e: React.MouseEvent) => {
+  const handleReplyAction = async (e: React.MouseEvent) => {
     e.stopPropagation();
 
     if (!canInteract) {
       requireLogin();
+      return;
+    }
+
+    const permission = await checkReplyPermission({
+      viewerName: viewerName,
+      authorName,
+      content,
+      replyAudience,
+    });
+
+    if (!permission.allowed) {
+      alert(permission.reason || '你当前没有权限回复这条帖子。');
       return;
     }
 
@@ -441,7 +648,11 @@ export default function ThreadCard({
             {content}
           </div>
 
-          {imagesArray.length > 0 && (
+          {imagesArray.length === 1 && (
+            <SingleImagePreview image={imagesArray[0]} onOpen={() => setZoomedIndex(0)} />
+          )}
+
+          {imagesArray.length > 1 && (
             <ThreadImageGallery images={imagesArray} onOpen={(index) => setZoomedIndex(index)} />
           )}
 
@@ -494,8 +705,8 @@ export default function ThreadCard({
           images={imagesArray}
           activeIndex={zoomedIndex}
           onClose={() => setZoomedIndex(null)}
-          onPrev={() => setZoomedIndex((prev) => (prev === null ? null : prev - 1))}
-          onNext={() => setZoomedIndex((prev) => (prev === null ? null : prev + 1))}
+          onPrev={() => setZoomedIndex((prev) => (prev === null ? null : Math.max(0, prev - 1)))}
+          onNext={() => setZoomedIndex((prev) => (prev === null ? null : Math.min(imagesArray.length - 1, prev + 1)))}
         />
       )}
 
